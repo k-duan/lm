@@ -68,6 +68,7 @@ class LM(nn.Module):
         self._lm_head = nn.Linear(embedding_dim, vocab_size)
 
     def forward(self, inputs: torch.Tensor, targets: torch.Tensor = None):
+        # TODO support padding mask
         loss = None
         outputs = self._token_embedding(inputs)
         outputs = self._transformer(outputs)
@@ -100,3 +101,23 @@ class LM(nn.Module):
                 raise ValueError("only accept ascii characters")
             output.append("".join([chr(i) for i in v]))
         return output
+
+    @torch.no_grad()
+    def top_k_sample(self, logits: torch.Tensor, top_k: int = 5, temperature: float = 0.9) -> torch.Tensor:
+        logits = logits[:,-1,:]  # BxTxN -> BxN
+        _, indices = torch.topk(logits, top_k, dim=-1)  # BxK
+        masked_logits = torch.full(logits.size(), -torch.inf)
+        masked_logits = masked_logits.scatter(-1, indices, logits.gather(-1, indices))
+        masked_logits /= temperature
+        m = torch.distributions.Categorical(logits=masked_logits)
+        return m.sample().unsqueeze(dim=-1)
+
+    @torch.no_grad()
+    def predict(self, inputs: list[str], max_new_tokens: int) -> list[str]:
+        encoded_batch = self.encode(inputs)  # BxT
+        for _ in range(max_new_tokens):
+            logits, _ = self.forward(encoded_batch)
+            next_token_ids = self.top_k_sample(logits)  # Bx1
+            #  Bx(T+1)
+            encoded_batch = torch.concat([encoded_batch, next_token_ids], dim=-1)
+        return self.decode(encoded_batch)

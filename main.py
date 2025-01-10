@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Iterator
 import torch
 from torch.utils.data import DataLoader
@@ -16,19 +17,27 @@ def grad_norm(parameters: Iterator[torch.nn.Parameter]) -> float:
    return total_norm ** 0.5
 
 def main():
+    torch.manual_seed(123)
+    log_name = f"tinyshakespeare-{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}"
+    writer = tensorboard.SummaryWriter(log_dir=f"runs/{log_name}")
     lm = LM()
     dataset = TextDataset(file_path="tinyshakespeare.txt", context_size=256, encode_fn=lm.encode)
     dataloader = DataLoader(dataset, batch_size=64, shuffle=True)
     optimizer = AdamW(lm.parameters(), lr=1e-3)
-    writer = tensorboard.SummaryWriter()
-    for i, (x, y) in enumerate(dataloader):
-        optimizer.zero_grad()
-        _, loss = lm(x, y)
-        loss.backward()
-        torch.nn.utils.clip_grad_norm_(lm.parameters(), max_norm=1.0)
-        optimizer.step()
-        writer.add_scalar("train/loss", loss.item(), i)
-        writer.add_scalar("train/grad_norm", grad_norm(lm.parameters()), i)
+    n_epochs = 10
+    i = 0
+    for _ in range(n_epochs):
+        for x, y in dataloader:
+            optimizer.zero_grad()
+            _, loss = lm(x, y)
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(lm.parameters(), max_norm=1.0)
+            optimizer.step()
+            writer.add_scalar("train/loss", loss.item(), i)
+            writer.add_scalar("train/grad_norm", grad_norm(lm.parameters()), i)
+            if i % 100 == 0:
+                print(lm.predict(["how are"], 10))
+            i += 1
 
 if __name__ == "__main__":
     main()
