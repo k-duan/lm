@@ -39,8 +39,6 @@ def main():
                 lm.eval()
                 print(lm.predict(["\n"], max_new_tokens=500, top_k=20, temperature=0.9))
                 lm.train()
-            if i % 5000 == 0:
-                torch.save(lm.state_dict(), f"checkpoints/{i:06}.ckpt")
             i += 1
 
 if __name__ == "__main__":

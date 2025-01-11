@@ -29,7 +29,7 @@ class Attention(nn.Module):
         outputs = self._qkv(inputs).view(B, T, self._n_heads, -1) # BxTxD -> BxTxHx3mH
         outputs = outputs.transpose(1, 2)  # BxTxHx3mH -> BxHxTx3mH
         q, k, v = torch.split(outputs, outputs.size(-1) // 3, dim=-1)  # BxHxTx3mH -> (BxHxTxmH, BxHxTxmH, BxHxTxmH)
-        outputs = nn.functional.softmax((q @ k.transpose(-1, -2)) * att_mask / np.sqrt(k.size(-1)), dim=-1) @ v
+        outputs = nn.functional.softmax(torch.where(att_mask, q @ k.transpose(-1, -2), -torch.inf) / np.sqrt(k.size(-1)), dim=-1) @ v
         outputs = outputs.transpose(1, 2)
         outputs = outputs.reshape(B, T, -1)
         outputs = self._ffn(outputs)
@@ -117,10 +117,10 @@ class LM(nn.Module):
 
     @torch.no_grad()
     def predict(self, inputs: list[str], max_new_tokens: int, top_k: int = 5, temperature: float = 0.9) -> list[str]:
-        encoded_batch = self.encode(inputs)  # BxT
+        token_ids = self.encode(inputs)  # BxT
         for _ in range(max_new_tokens):
-            logits, _ = self.forward(encoded_batch)
+            logits, _ = self.forward(token_ids)
             next_token_ids = self.top_k_sample(logits, top_k, temperature)  # Bx1
             #  Bx(T+1)
-            encoded_batch = torch.concat([encoded_batch, next_token_ids], dim=-1)
-        return self.decode(encoded_batch)
+            token_ids = torch.concat([token_ids, next_token_ids], dim=-1)
+        return self.decode(token_ids)
