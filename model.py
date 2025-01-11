@@ -36,23 +36,26 @@ class Attention(nn.Module):
         return outputs
 
 class Block(nn.Module):
-    def __init__(self, embedding_dim: int, n_heads: int):
+    def __init__(self, embedding_dim: int, n_heads: int, dropout: float):
         super().__init__()
         self._attention = Attention(embedding_dim, n_heads)
         self._ln1 = nn.LayerNorm(embedding_dim)
         self._ffn = FFN(embedding_dim)
         self._ln2 = nn.LayerNorm(embedding_dim)
+        self._dropout = dropout
 
     def forward(self, inputs):
         att = self._attention(inputs)
+        att = torch.nn.functional.dropout(att, p=self._dropout)
         out1 = self._ln1(att + inputs)
         out2 = self._ffn(out1)
+        out2 = torch.nn.functional.dropout(out2, p=self._dropout)
         return self._ln2(out1 + out2)
 
 class Transformer(nn.Module):
-    def __init__(self, embedding_dim: int, n_layers: int, n_heads: int):
+    def __init__(self, embedding_dim: int, n_layers: int, n_heads: int, dropout: float):
         super().__init__()
-        self._blocks = nn.ModuleList([Block(embedding_dim, n_heads) for _ in range(n_layers)])
+        self._blocks = nn.ModuleList([Block(embedding_dim, n_heads, dropout) for _ in range(n_layers)])
 
     def forward(self, inputs):
         output = inputs
@@ -61,11 +64,12 @@ class Transformer(nn.Module):
         return output
 
 class LM(nn.Module):
-    def __init__(self, vocab_size: int = 128, embedding_dim: int = 256, n_layers: int = 8, n_heads: int = 8):
+    def __init__(self, vocab_size: int = 128, embedding_dim: int = 256, n_layers: int = 8, n_heads: int = 8, dropout: float = 0.1, label_smoothing: float = 0.1):
         super().__init__()
         self._token_embedding = nn.Embedding(vocab_size, embedding_dim)
-        self._transformer = Transformer(embedding_dim, n_layers, n_heads)
+        self._transformer = Transformer(embedding_dim, n_layers, n_heads, dropout)
         self._lm_head = nn.Linear(embedding_dim, vocab_size)
+        self._label_smoothing = label_smoothing
 
     def forward(self, inputs: torch.Tensor, targets: torch.Tensor = None):
         # TODO support padding mask
@@ -74,7 +78,7 @@ class LM(nn.Module):
         outputs = self._transformer(outputs)
         logits = self._lm_head(outputs)
         if targets is not None:
-            loss = nn.functional.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1))
+            loss = nn.functional.cross_entropy(logits.view(-1, logits.size(-1)), targets.view(-1), label_smoothing=self._label_smoothing)
         return logits, loss
 
     @torch.no_grad()
@@ -105,11 +109,10 @@ class LM(nn.Module):
     @torch.no_grad()
     def top_k_sample(self, logits: torch.Tensor, top_k: int = 5, temperature: float = 0.9) -> torch.Tensor:
         logits = logits[:,-1,:]  # BxTxN -> BxN
-        _, indices = torch.topk(logits, top_k, dim=-1)  # BxK
+        values, indices = torch.topk(logits, top_k, dim=-1)  # BxK
         masked_logits = torch.full(logits.size(), -torch.inf)
-        masked_logits = masked_logits.scatter(-1, indices, logits.gather(-1, indices))
-        masked_logits /= temperature
-        m = torch.distributions.Categorical(logits=masked_logits)
+        masked_logits = masked_logits.scatter(-1, indices, values)
+        m = torch.distributions.Categorical(logits=masked_logits / temperature)
         return m.sample().unsqueeze(dim=-1)
 
     @torch.no_grad()

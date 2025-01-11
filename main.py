@@ -24,7 +24,7 @@ def main():
     dataset = TextDataset(file_path="tinyshakespeare.txt", context_size=256, encode_fn=lm.encode)
     dataloader = DataLoader(dataset, batch_size=64, shuffle=True)
     optimizer = AdamW(lm.parameters(), lr=1e-3)
-    n_epochs = 10
+    n_epochs = 2
     i = 0
     for _ in range(n_epochs):
         for x, y in dataloader:
@@ -37,6 +37,8 @@ def main():
             writer.add_scalar("train/grad_norm", grad_norm(lm.parameters()), i)
             if i % 100 == 0:
                 print(lm.predict(["how are"], 10))
+            if i % 5000 == 0:
+                torch.save(lm.state_dict(), f"checkpoints/{i:06}.ckpt")
             i += 1
 
 if __name__ == "__main__":
