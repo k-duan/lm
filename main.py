@@ -21,8 +21,8 @@ def main():
     log_name = f"tinyshakespeare-{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}"
     writer = tensorboard.SummaryWriter(log_dir=f"runs/{log_name}")
     lm = LM()
-    dataset = TextDataset(file_path="tinyshakespeare.txt", context_size=256, encode_fn=lm.encode)
-    dataloader = DataLoader(dataset, batch_size=64, shuffle=True)
+    dataset = TextDataset(file_path="tinyshakespeare.txt", context_size=128, encode_fn=lm.encode)
+    dataloader = DataLoader(dataset, batch_size=16, shuffle=True)
     optimizer = AdamW(lm.parameters(), lr=1e-3)
     n_epochs = 2
     i = 0
@@ -37,7 +37,7 @@ def main():
             writer.add_scalar("train/grad_norm", grad_norm(lm.parameters()), i)
             if i % 100 == 0:
                 lm.eval()
-                print(lm.predict(["\n"], max_new_tokens=500, top_k=20, temperature=0.9))
+                print(lm.predict(["\n"], max_new_tokens=100, top_k=10, temperature=0.9))
                 lm.train()
             i += 1
 

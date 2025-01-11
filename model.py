@@ -64,7 +64,7 @@ class Transformer(nn.Module):
         return output
 
 class LM(nn.Module):
-    def __init__(self, vocab_size: int = 128, embedding_dim: int = 256, n_layers: int = 8, n_heads: int = 8, dropout: float = 0.1, label_smoothing: float = 0.1):
+    def __init__(self, vocab_size: int = 128, embedding_dim: int = 128, n_layers: int = 4, n_heads: int = 4, dropout: float = 0.1, label_smoothing: float = 0.1):
         super().__init__()
         self._token_embedding = nn.Embedding(vocab_size, embedding_dim)
         self._transformer = Transformer(embedding_dim, n_layers, n_heads, dropout)
