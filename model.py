@@ -107,7 +107,7 @@ class LM(nn.Module):
         return output
 
     @torch.no_grad()
-    def top_k_sample(self, logits: torch.Tensor, top_k: int = 5, temperature: float = 0.9) -> torch.Tensor:
+    def top_k_sample(self, logits: torch.Tensor, top_k: int, temperature: float) -> torch.Tensor:
         logits = logits[:,-1,:]  # BxTxN -> BxN
         values, indices = torch.topk(logits, top_k, dim=-1)  # BxK
         masked_logits = torch.full(logits.size(), -torch.inf)
@@ -116,11 +116,11 @@ class LM(nn.Module):
         return m.sample().unsqueeze(dim=-1)
 
     @torch.no_grad()
-    def predict(self, inputs: list[str], max_new_tokens: int) -> list[str]:
+    def predict(self, inputs: list[str], max_new_tokens: int, top_k: int = 5, temperature: float = 0.9) -> list[str]:
         encoded_batch = self.encode(inputs)  # BxT
         for _ in range(max_new_tokens):
             logits, _ = self.forward(encoded_batch)
-            next_token_ids = self.top_k_sample(logits)  # Bx1
+            next_token_ids = self.top_k_sample(logits, top_k, temperature)  # Bx1
             #  Bx(T+1)
             encoded_batch = torch.concat([encoded_batch, next_token_ids], dim=-1)
         return self.decode(encoded_batch)

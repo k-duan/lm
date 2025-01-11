@@ -36,7 +36,9 @@ def main():
             writer.add_scalar("train/loss", loss.item(), i)
             writer.add_scalar("train/grad_norm", grad_norm(lm.parameters()), i)
             if i % 100 == 0:
-                print(lm.predict(["how are"], 10))
+                lm.eval()
+                print(lm.predict(["\n"], max_new_tokens=500, top_k=20, temperature=0.9))
+                lm.train()
             if i % 5000 == 0:
                 torch.save(lm.state_dict(), f"checkpoints/{i:06}.ckpt")
             i += 1
