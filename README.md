@@ -20,4 +20,4 @@ Notes:
   * Must use `-inf` instead of `0` to mask logits, e.g. [attention mask](https://github.com/k-duan/lm/commit/38e208e91d187986119ad290c85940f88d07c67a), [top k sampling](https://github.com/k-duan/lm/commit/fbf2561cabac7b92c1e7c53e0db740c49ab30769).
 
 References:
-* The code is written from scratch but several bugs were found when comparing with Andre Kapathy's [nanoGPT](https://github.com/karpathy/nanoGPT) repo.
+* The code is written from scratch but several bugs were found when comparing with Andrej Karpathy's [nanoGPT](https://github.com/karpathy/nanoGPT) repo.
