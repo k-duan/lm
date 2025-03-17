@@ -29,7 +29,7 @@ def main():
     for _ in range(n_epochs):
         for x, y in dataloader:
             optimizer.zero_grad()
-            _, loss = lm(x, y)
+            _, loss, _ = lm(x, y)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(lm.parameters(), max_norm=1.0)
             optimizer.step()
@@ -37,7 +37,8 @@ def main():
             writer.add_scalar("train/grad_norm", grad_norm(lm.parameters()), i)
             if i % 100 == 0:
                 lm.eval()
-                print(lm.predict(["\n"], max_new_tokens=100, top_k=10, temperature=0.9))
+                sample = lm.predict(["\n"], max_new_tokens=100, top_k=10, temperature=0.9)
+                print(f"step={i}: {sample}\n")
                 lm.train()
             i += 1
 
