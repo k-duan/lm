@@ -33,7 +33,9 @@ Goals:
 
 Implementations:
 * A simple ASCII tokenizer using python's `ord()` and `chr()`.
+* Transformer architecture follows GPT-2 paper
 * Top K sampling
+* KV cache
 
 Notes:
 * Does training loss decrease and converge means a correct implementation or successful model?
