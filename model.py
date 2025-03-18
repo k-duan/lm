@@ -4,25 +4,31 @@ import torch
 from torch import nn
 import numpy as np
 
+class GeLU(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, inputs):
+        return 0.5 * inputs * (1 + nn.functional.tanh(np.sqrt(2/np.pi) * (inputs + 0.044715 * inputs**3)))
 
 class FFN(nn.Module):
-    def __init__(self, embedding_dim: int):
+    def __init__(self, embedding_dim: int, mlp_dim: int):
         super().__init__()
-        self._linear1 = nn.Linear(embedding_dim, embedding_dim)
-        self._linear2 = nn.Linear(embedding_dim, embedding_dim)
+        self._linear1 = nn.Linear(embedding_dim, mlp_dim)
+        self._gelu = GeLU()
+        self._linear2 = nn.Linear(mlp_dim, embedding_dim)
 
     def forward(self, inputs):
         outputs = self._linear1(inputs)
-        outputs = nn.functional.relu(outputs)
+        outputs = self._gelu(outputs)
         outputs = self._linear2(outputs)
         return outputs
 
 class Attention(nn.Module):
-    def __init__(self, embedding_dim: int, n_heads: int):
+    def __init__(self, embedding_dim: int, mlp_dim: int, n_heads: int):
         super().__init__()
         self._qkv = nn.Linear(embedding_dim, embedding_dim * 3)
-        self._attention_mask = torch.tril(torch.ones(n_heads, n_heads, dtype=torch.bool))
-        self._ffn = FFN(embedding_dim)
+        self._ffn = FFN(embedding_dim, mlp_dim)
         self._n_heads = n_heads
 
     def forward(self,
@@ -51,11 +57,11 @@ class Attention(nn.Module):
         return outputs, kv_cache
 
 class Block(nn.Module):
-    def __init__(self, embedding_dim: int, n_heads: int, dropout: float):
+    def __init__(self, embedding_dim: int, mlp_dim: int, n_heads: int, dropout: float):
         super().__init__()
-        self._attention = Attention(embedding_dim, n_heads)
+        self._attention = Attention(embedding_dim, mlp_dim, n_heads)
         self._ln1 = nn.LayerNorm(embedding_dim)
-        self._ffn = FFN(embedding_dim)
+        self._ffn = FFN(embedding_dim, mlp_dim)
         self._ln2 = nn.LayerNorm(embedding_dim)
         self._dropout = dropout
 
@@ -74,9 +80,9 @@ class Transformer(nn.Module):
     2) additional normalization after final attention block
     """
 
-    def __init__(self, embedding_dim: int, n_layers: int, n_heads: int, dropout: float):
+    def __init__(self, embedding_dim: int, mlp_dim: int, n_layers: int, n_heads: int, dropout: float):
         super().__init__()
-        self._blocks = nn.ModuleList([Block(embedding_dim, n_heads, dropout) for _ in range(n_layers)])
+        self._blocks = nn.ModuleList([Block(embedding_dim, mlp_dim, n_heads, dropout) for _ in range(n_layers)])
         self._ln = nn.LayerNorm(embedding_dim)
 
     def forward(self, inputs: torch.Tensor, kv_cache: Optional[list[tuple[torch.Tensor, torch.Tensor]]] = None):
@@ -88,10 +94,10 @@ class Transformer(nn.Module):
         return output, kv_cache
 
 class LM(nn.Module):
-    def __init__(self, vocab_size: int = 128, embedding_dim: int = 128, n_layers: int = 4, n_heads: int = 4, dropout: float = 0.1, label_smoothing: float = 0.1):
+    def __init__(self, vocab_size: int = 128, embedding_dim: int = 128, mlp_dim: int = 512, n_layers: int = 4, n_heads: int = 4, dropout: float = 0.1, label_smoothing: float = 0.1):
         super().__init__()
         self._token_embedding = nn.Embedding(vocab_size, embedding_dim)
-        self._transformer = Transformer(embedding_dim, n_layers, n_heads, dropout)
+        self._transformer = Transformer(embedding_dim, mlp_dim, n_layers, n_heads, dropout)
         self._lm_head = nn.Linear(embedding_dim, vocab_size)
         self._label_smoothing = label_smoothing
 
@@ -151,6 +157,5 @@ class LM(nn.Module):
         for _ in range(max_new_tokens):
             logits, _, kv_cache = self.forward(inputs=token_ids if next_token_ids is None else next_token_ids, kv_cache=kv_cache)
             next_token_ids = self.top_k_sample(logits, top_k, temperature)  # Bx1
-            #  Bx(T+1)
             generated_ids = torch.concat([generated_ids, next_token_ids], dim=-1)
         return self.decode(torch.concat([token_ids, generated_ids], dim=-1))
