@@ -25,10 +25,10 @@ class FFN(nn.Module):
         return outputs
 
 class Attention(nn.Module):
-    def __init__(self, embedding_dim: int, mlp_dim: int, n_heads: int):
+    def __init__(self, embedding_dim: int, n_heads: int):
         super().__init__()
         self._qkv = nn.Linear(embedding_dim, embedding_dim * 3)
-        self._ffn = FFN(embedding_dim, mlp_dim)
+        self._proj = nn.Linear(embedding_dim, embedding_dim)
         self._n_heads = n_heads
 
     def forward(self,
@@ -53,13 +53,13 @@ class Attention(nn.Module):
         outputs = nn.functional.softmax(torch.where(att_mask, q @ new_k.transpose(-1, -2), -torch.inf) / np.sqrt(new_k.size(-1)), dim=-1) @ new_v
         outputs = outputs.transpose(1, 2)  # outputs.shape: BxTxHxmH
         outputs = outputs.reshape(B, T, -1)  # outputs.shape: BxTxD
-        outputs = self._ffn(outputs)
+        outputs = self._proj(outputs)
         return outputs, kv_cache
 
 class Block(nn.Module):
     def __init__(self, embedding_dim: int, mlp_dim: int, n_heads: int, dropout: float):
         super().__init__()
-        self._attention = Attention(embedding_dim, mlp_dim, n_heads)
+        self._attention = Attention(embedding_dim, n_heads)
         self._ln1 = nn.LayerNorm(embedding_dim)
         self._ffn = FFN(embedding_dim, mlp_dim)
         self._ln2 = nn.LayerNorm(embedding_dim)
