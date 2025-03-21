@@ -11,6 +11,21 @@ class GeLU(nn.Module):
     def forward(self, inputs):
         return 0.5 * inputs * (1 + nn.functional.tanh(np.sqrt(2/np.pi) * (inputs + 0.044715 * inputs**3)))
 
+class RoPE(nn.Module):
+    def __init__(self, embedding_dim: int):
+        super().__init__()
+        # \theta_i = 10000^(-2i/d) = exp(-2i/d * log(10000)), for each i \in [0, d/2]
+        thetas = torch.exp(-torch.arange(0, embedding_dim, 2) * np.log(10000) / embedding_dim)
+        thetas = torch.stack([thetas, thetas], dim=-1).view(-1)
+        self.register_buffer("thetas", thetas)
+
+    def forward(self, inputs) -> torch.Tensor:
+        # Apply rotary positional encoding on inputs (BxTxD)
+        # Eq.13 in https://kexue.fm/archives/8265 (Or Eq. 34 in https://arxiv.org/abs/2104.09864)
+        B, T, _ = inputs.size()
+        thetas = torch.arange(0, T).outer(self.thetas)
+        return inputs * thetas.cos() + torch.stack([-inputs[..., ::2], inputs[..., 1::2]], dim=-1).view(B, T, -1) * thetas.sin() # broadcasting
+
 class FFN(nn.Module):
     def __init__(self, embedding_dim: int, mlp_dim: int):
         super().__init__()
@@ -35,23 +50,23 @@ class Attention(nn.Module):
                 inputs: torch.Tensor,
                 kv_cache: Optional[tuple[torch.Tensor, torch.Tensor]] = None):
         # inputs.shape: BxTxD if kv_cache is None else Bx1xD
-        # kv_cache.shape: (BxHxT'xmH, BxHxT'xmH)
+        # kv_cache.shape: (BxHxT'xmD, BxHxT'xmD)
         B, T, _ = inputs.size()
         seq_len = T if kv_cache is None else kv_cache[0].size(-2) + 1
         # att_mask.shape: seq_lenxseq_len if kv_cache is None else 1xseq_len
         att_mask = torch.tril(torch.ones(seq_len, seq_len, dtype=torch.bool)) if kv_cache is None else  torch.ones(1, seq_len, dtype=torch.bool)
-        outputs = self._qkv(inputs).view(B, T, self._n_heads, -1) # BxTxD -> BxTxHx3mH
-        outputs = outputs.transpose(1, 2)  # BxTxHx3mH -> BxHxTx3mH
-        q, k, v = torch.split(outputs, outputs.size(-1) // 3, dim=-1)  # BxHxTx3mH -> (BxHxTxmH, BxHxTxmH, BxHxTxmH)
+        outputs = self._qkv(inputs).view(B, T, self._n_heads, -1) # BxTxD -> BxTxHx3mD
+        outputs = outputs.transpose(1, 2)  # BxTxHx3mD -> BxHxTx3mD
+        q, k, v = torch.split(outputs, outputs.size(-1) // 3, dim=-1)  # BxHxTx3mD -> (BxHxTxmD, BxHxTxmD, BxHxTxmD)
         # add to kv cache
         kv_cache = (k, v) if kv_cache is None else (torch.cat([kv_cache[0], k], dim=-2), torch.cat([kv_cache[1], v], dim=-2))
         new_k, new_v = kv_cache
-        # q.shape: BxHxTxmH if kv_cache is None else BxHx1xmH
-        # new_k.shape: BxHxseq_lenxmH, new_v.shape: BxHxseq_lenxmH
+        # q.shape: BxHxTxmD if kv_cache is None else BxHx1xmD
+        # new_k.shape: BxHxseq_lenxmD, new_v.shape: BxHxseq_lenxmD
         # q @ new_k.transpose(-1, -2).shape: BxHxseq_lenxseq_len if kv_cache is None else BxHx1xseq_len
-        # outputs.shape: BxHxseq_lenxmH if kv_cache is None else BxHx1xmH
+        # outputs.shape: BxHxseq_lenxmD if kv_cache is None else BxHx1xmD
         outputs = nn.functional.softmax(torch.where(att_mask, q @ new_k.transpose(-1, -2), -torch.inf) / np.sqrt(new_k.size(-1)), dim=-1) @ new_v
-        outputs = outputs.transpose(1, 2)  # outputs.shape: BxTxHxmH
+        outputs = outputs.transpose(1, 2)  # outputs.shape: BxTxHxmD
         outputs = outputs.reshape(B, T, -1)  # outputs.shape: BxTxD
         outputs = self._proj(outputs)
         return outputs, kv_cache
