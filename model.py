@@ -155,13 +155,13 @@ class LM(nn.Module):
         return output
 
     @torch.no_grad()
-    def top_k_sample(self, logits: torch.Tensor, top_k: int, temperature: float) -> torch.Tensor:
-        logits = logits[:,-1,:]  # BxTxN -> BxN
-        values, indices = torch.topk(logits, top_k, dim=-1)  # BxK
-        masked_logits = torch.full(logits.size(), -torch.inf)
-        masked_logits = masked_logits.scatter(-1, indices, values)
-        m = torch.distributions.Categorical(logits=masked_logits / temperature)
-        return m.sample().unsqueeze(dim=-1)
+    def top_k_sample_v2(self, logits: torch.Tensor, top_k: int, temperature: float) -> torch.Tensor:
+        # logits: BxTxN
+        last_logits = logits[:,-1,:] # BxN
+        vals, inds = torch.topk(last_logits, k=top_k, dim=-1)
+        masked_logits = torch.full(last_logits.size(), fill_value=-torch.inf, dtype=torch.float32)
+        masked_logits.scatter_(dim=-1, index=inds, src=last_logits) # use `scatter_` instead of `scatter` for in-place operation
+        return torch.multinomial(torch.softmax(masked_logits / temperature, dim=-1), num_samples=1)
 
     @torch.no_grad()
     def predict(self, inputs: list[str], max_new_tokens: int, top_k: int = 5, temperature: float = 0.9) -> list[str]:
@@ -171,6 +171,6 @@ class LM(nn.Module):
         next_token_ids = None
         for _ in range(max_new_tokens):
             logits, _, kv_cache = self.forward(inputs=token_ids if next_token_ids is None else next_token_ids, kv_cache=kv_cache)
-            next_token_ids = self.top_k_sample(logits, top_k, temperature)  # Bx1
+            next_token_ids = self.top_k_sample_v2(logits, top_k, temperature)  # Bx1
             generated_ids = torch.concat([generated_ids, next_token_ids], dim=-1)
         return self.decode(torch.concat([token_ids, generated_ids], dim=-1))
