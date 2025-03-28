@@ -23,10 +23,23 @@ class TestTopKSample(unittest.TestCase):
     def setUp(self):
         self._model = LM()
 
-    def testTopOneSampleV2(self):
+    def testTopKSample(self):
         # test_input: BxTxvocab_size
         test_input = torch.tensor([[[1, 2, 3, 4], [5, 6, 8, 7]], [[9, 10, 11, 12], [16, 13, 14, 15]]],
                                   dtype=torch.float32)
         expected_output = torch.tensor([[2], [0]])
-        output = self._model.top_k_sample_v2(logits=test_input, top_k=1, temperature=0.9)
+        output = self._model.top_k_sample(logits=test_input, top_k=1, temperature=0.9)
+        torch.testing.assert_close(output, expected_output)
+
+class TestTopPSample(unittest.TestCase):
+    def setUp(self):
+        self._model = LM()
+        torch.manual_seed(123)
+
+    def testTopPSample(self):
+        # test_input: BxTxvocab_size
+        test_input = torch.tensor([[[1, 2, 3, 4], [1, 1, 1, 5]], [[9, 10, 11, 12], [2, 2, 2, 4]]],
+                                  dtype=torch.float32)
+        expected_output = torch.tensor([[3], [3]])
+        output = self._model.top_p_sample(logits=test_input, top_p=0.9, temperature=0.9)
         torch.testing.assert_close(output, expected_output)

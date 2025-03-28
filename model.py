@@ -155,13 +155,29 @@ class LM(nn.Module):
         return output
 
     @torch.no_grad()
-    def top_k_sample_v2(self, logits: torch.Tensor, top_k: int, temperature: float) -> torch.Tensor:
+    def top_k_sample(self, logits: torch.Tensor, top_k: int, temperature: float) -> torch.Tensor:
         # logits: BxTxN
         last_logits = logits[:,-1,:] # BxN
         vals, inds = torch.topk(last_logits, k=top_k, dim=-1)
         masked_logits = torch.full(last_logits.size(), fill_value=-torch.inf, dtype=torch.float32)
-        masked_logits.scatter_(dim=-1, index=inds, src=last_logits) # use `scatter_` instead of `scatter` for in-place operation
+        masked_logits.scatter_(dim=-1, index=inds, src=vals) # use `scatter_` instead of `scatter` for in-place operation
         return torch.multinomial(torch.softmax(masked_logits / temperature, dim=-1), num_samples=1)
+
+    @torch.no_grad()
+    def top_p_sample(self, logits: torch.Tensor, top_p: float, temperature: float) -> torch.Tensor:
+        # logits: BxTxN
+        last_logits = logits[:, -1, :] # BxN
+        # sort along last dim, then calculate cumulative probabilities
+        probs = torch.softmax(last_logits / temperature, dim=-1)
+        vals, inds = torch.sort(probs, dim=-1, descending=True)
+        cum_sum_probs = torch.cumsum(vals, dim=-1)
+        # zero out token probabilities whose cum sum is below top_p
+        masked_probs = torch.where(cum_sum_probs >= top_p, 0, vals)
+        # keep first token (with which the cum sum is above top_p for the first time)
+        keep_inds = torch.argmin(masked_probs, dim=-1).unsqueeze(dim=-1)
+        masked_probs[torch.arange(masked_probs.size(0)), keep_inds] = vals[torch.arange(vals.size(0)), keep_inds]
+        masked_probs = masked_probs / torch.sum(masked_probs, dim=-1, keepdim=True)
+        return torch.gather(inds, dim=-1, index=torch.multinomial(masked_probs, num_samples=1))
 
     @torch.no_grad()
     def predict(self, inputs: list[str], max_new_tokens: int, top_k: int = 5, temperature: float = 0.9) -> list[str]:
@@ -171,6 +187,6 @@ class LM(nn.Module):
         next_token_ids = None
         for _ in range(max_new_tokens):
             logits, _, kv_cache = self.forward(inputs=token_ids if next_token_ids is None else next_token_ids, kv_cache=kv_cache)
-            next_token_ids = self.top_k_sample_v2(logits, top_k, temperature)  # Bx1
+            next_token_ids = self.top_k_sample(logits, top_k, temperature)  # Bx1
             generated_ids = torch.concat([generated_ids, next_token_ids], dim=-1)
         return self.decode(torch.concat([token_ids, generated_ids], dim=-1))
